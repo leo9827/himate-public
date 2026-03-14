@@ -9,7 +9,6 @@ This repo keeps one idea in two single-file implementations:
 
 The repo stays intentionally small:
 
-- no bundled skills
 - no tests
 - no multi-file provider layer
 - no docs history
@@ -28,9 +27,17 @@ Optional environment variables:
 - `MAX_TOKENS`
 - `SKILLS_DIR`
 
+## Bundled Skills
+
+This repo now ships with two skills under `./skills`:
+
+- `agent-builder`: design and build AI agents, capabilities, subagents, and skill systems
+- `code-review`: structured code review for bugs, security, performance, and maintainability
+
 ## Skill Format
 
 Both versions look for skills under `./skills` by default, or under `SKILLS_DIR` if set.
+You can use the bundled skills as-is, and add your own alongside them.
 
 Each skill should live in its own folder:
 
@@ -85,4 +92,4 @@ Go REPL:
 go run main.go
 ```
 
-The model sees skill metadata in the system prompt and can load full skill content through the `Skill` tool. No sample skills are bundled here; code stays minimal, skills stay external.
+The model sees skill metadata in the system prompt and can load full skill content through the `Skill` tool. The code stays minimal; skills remain plain files you can inspect and extend.
