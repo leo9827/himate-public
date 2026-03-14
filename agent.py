@@ -1,37 +1,139 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+WORKDIR = Path.cwd()
+SKILLS_DIR = Path(os.getenv("SKILLS_DIR", str(WORKDIR / "skills")))
 BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
 API_URL = f"{BASE_URL}/v1/messages"
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
-WORKDIR = Path.cwd()
-SYSTEM = (
-    f"You are a coding agent at {WORKDIR}. "
-    "Use bash when needed, inspect paths before assuming, and keep the final answer brief."
-)
-TOOLS = [
-    {
-        "name": "bash",
-        "description": "Execute a bash command.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The bash command to execute.",
-                }
+
+
+class SkillLoader:
+    def __init__(self, skills_dir):
+        self.skills_dir = skills_dir
+        self.skills = {}
+        self.refresh()
+
+    def refresh(self):
+        self.skills = {}
+        if not self.skills_dir.exists():
+            return
+        for child in sorted(self.skills_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            skill = self.parse(child / "SKILL.md")
+            if skill:
+                self.skills[skill["name"]] = skill
+
+    def parse(self, path):
+        if not path.exists():
+            return None
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", path.read_text(), re.DOTALL)
+        if not match:
+            return None
+        frontmatter, body = match.groups()
+        metadata = {}
+        for line in frontmatter.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            metadata[key.strip()] = value.strip().strip("\"'")
+        name = metadata.get("name")
+        description = metadata.get("description")
+        if not name or not description:
+            return None
+        return {
+            "name": name,
+            "description": description,
+            "body": body.strip(),
+            "dir": path.parent,
+        }
+
+    def descriptions(self):
+        if not self.skills:
+            return "(none)"
+        return "\n".join(
+            f"- {name}: {skill['description']}"
+            for name, skill in sorted(self.skills.items())
+        )
+
+    def names(self):
+        return sorted(self.skills)
+
+    def content(self, name):
+        skill = self.skills.get(name)
+        if not skill:
+            return None
+        parts = [f'# Skill: {skill["name"]}', "", skill["body"]]
+        resources = []
+        for folder in ("scripts", "references", "assets"):
+            folder_path = skill["dir"] / folder
+            if not folder_path.exists():
+                continue
+            names = sorted(child.name for child in folder_path.iterdir())
+            if names:
+                resources.append(f"{folder}: {', '.join(names)}")
+        if resources:
+            parts.extend(["", "Available resources:"])
+            parts.extend(f"- {item}" for item in resources)
+        return "\n".join(parts).strip()
+
+
+SKILLS = SkillLoader(SKILLS_DIR)
+
+
+def build_system():
+    return (
+        f"You are a coding agent at {WORKDIR}.\n\n"
+        "Available skills:\n"
+        f"{SKILLS.descriptions()}\n\n"
+        "Rules:\n"
+        "- If the task matches a skill, load it with the Skill tool before using bash.\n"
+        "- Use bash for inspection and changes.\n"
+        "- Keep the final answer brief."
+    )
+
+
+def build_tools():
+    return [
+        {
+            "name": "bash",
+            "description": "Execute a bash command.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute.",
+                    }
+                },
+                "required": ["command"],
             },
-            "required": ["command"],
         },
-    }
-]
+        {
+            "name": "Skill",
+            "description": "Load a skill when a task matches one of these descriptions:\n"
+            f"{SKILLS.descriptions()}",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "skill": {
+                        "type": "string",
+                        "description": "The skill name to load.",
+                    }
+                },
+                "required": ["skill"],
+            },
+        },
+    ]
 
 
 def text_block(text):
@@ -42,11 +144,12 @@ def call_api(messages):
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is required")
+    SKILLS.refresh()
     payload = {
         "model": MODEL,
-        "system": SYSTEM,
+        "system": build_system(),
         "max_tokens": MAX_TOKENS,
-        "tools": TOOLS,
+        "tools": build_tools(),
         "messages": messages,
     }
     request = urllib.request.Request(
@@ -68,15 +171,11 @@ def call_api(messages):
 
 
 def format_tool_result(command, exit_code, stdout, stderr, error_text=""):
-    body = [
-        f"command: {command}",
-        f"exit_code: {exit_code}",
-    ]
+    lines = [f"command: {command}", f"exit_code: {exit_code}"]
     if error_text:
-        body.append(f"error: {error_text}")
-    body.extend(["stdout:", stdout, "stderr:", stderr])
-    text = "\n".join(body).strip() + "\n"
-    return text[:50000]
+        lines.append(f"error: {error_text}")
+    lines.extend(["stdout:", stdout, "stderr:", stderr])
+    return ("\n".join(lines).strip() + "\n")[:50000]
 
 
 def run_bash(command):
@@ -96,8 +195,29 @@ def run_bash(command):
     )
 
 
+def run_skill(name):
+    content = SKILLS.content(name)
+    if content is None:
+        names = ", ".join(SKILLS.names()) or "none"
+        return f"error: unknown skill {name!r}. available: {names}", True
+    return (
+        f'<skill-loaded name="{name}">\n{content}\n</skill-loaded>\n\n'
+        "Follow the skill above for the current task."
+    ), False
+
+
 def collect_text(content):
     return "".join(block.get("text", "") for block in content if block.get("type") == "text")
+
+
+def execute_tool(block):
+    name = block.get("name")
+    data = block.get("input") or {}
+    if name == "bash":
+        return run_bash(str(data.get("command", "")))
+    if name == "Skill":
+        return run_skill(str(data.get("skill", "")))
+    return f"error: unknown tool {name!r}", True
 
 
 def run(prompt, history=None):
@@ -113,8 +233,7 @@ def run(prompt, history=None):
         for block in content:
             if block.get("type") != "tool_use":
                 continue
-            command = block.get("input", {}).get("command", "")
-            output, is_error = run_bash(command)
+            output, is_error = execute_tool(block)
             results.append(
                 {
                     "type": "tool_result",
