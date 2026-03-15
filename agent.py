@@ -10,7 +10,8 @@ from pathlib import Path
 
 WORKDIR = Path.cwd()
 SKILLS_DIR = Path(os.getenv("SKILLS_DIR", str(WORKDIR / "skills")))
-BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+DEFAULT_BASE_URL = "https://api.anthropic.com"
+BASE_URL = os.getenv("ANTHROPIC_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 API_URL = f"{BASE_URL}/v1/messages"
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
@@ -140,10 +141,23 @@ def text_block(text):
     return {"type": "text", "text": text}
 
 
+def auth_headers():
+    token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+    if not token:
+        raise RuntimeError("ANTHROPIC_AUTH_TOKEN is required")
+    raw_token = token[7:] if token.lower().startswith("bearer ") else token
+    bearer_token = token if token.lower().startswith("bearer ") else f"Bearer {token}"
+    headers = {
+        "content-type": "application/json",
+        "authorization": bearer_token,
+        "anthropic-version": "2023-06-01",
+    }
+    if BASE_URL == DEFAULT_BASE_URL:
+        headers["x-api-key"] = raw_token
+    return headers
+
+
 def call_api(messages):
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is required")
     SKILLS.refresh()
     payload = {
         "model": MODEL,
@@ -156,11 +170,7 @@ def call_api(messages):
         API_URL,
         data=json.dumps(payload).encode(),
         method="POST",
-        headers={
-            "content-type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        },
+        headers=auth_headers(),
     )
     try:
         with urllib.request.urlopen(request, timeout=300) as response:

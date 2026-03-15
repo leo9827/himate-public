@@ -34,7 +34,7 @@ import os
 load_dotenv()
 
 client = Anthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    api_key=os.getenv("ANTHROPIC_AUTH_TOKEN"),
     base_url=os.getenv("ANTHROPIC_BASE_URL")
 )
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
@@ -94,7 +94,7 @@ import os
 load_dotenv()
 
 client = Anthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    api_key=os.getenv("ANTHROPIC_AUTH_TOKEN"),
     base_url=os.getenv("ANTHROPIC_BASE_URL")
 )
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
@@ -208,7 +208,7 @@ if __name__ == "__main__":
 }
 
 ENV_TEMPLATE = '''# API Configuration
-ANTHROPIC_API_KEY=sk-xxx
+ANTHROPIC_AUTH_TOKEN=sk-xxx
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 MODEL_NAME=claude-sonnet-4-20250514
 '''
@@ -247,9 +247,9 @@ def create_agent(name: str, level: int, output_dir: Path):
     print(f"\nNext steps:")
     print(f"  1. cd {agent_dir}")
     print(f"  2. cp .env.example .env")
-    print(f"  3. Edit .env with your API key")
-    print(f"  4. pip install anthropic python-dotenv")
-    print(f"  5. python {name}.py")
+    print(f"  3. Edit .env with your auth token")
+    print(f"  4. uv venv && uv pip install anthropic python-dotenv")
+    print(f"  5. uv run python {name}.py")
 
 
 def main():

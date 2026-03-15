@@ -18,7 +18,7 @@ The repo stays intentionally small:
 
 - Python 3.12+ with `uv`
 - Go 1.22+
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_AUTH_TOKEN`
 
 Optional environment variables:
 
@@ -64,7 +64,7 @@ Optional sibling folders such as `scripts/`, `references/`, and `assets/` are de
 ## Run
 
 ```bash
-export ANTHROPIC_API_KEY=your-key
+export ANTHROPIC_AUTH_TOKEN=your-token
 export MODEL_NAME=claude-sonnet-4-20250514
 ```
 
@@ -93,3 +93,5 @@ go run main.go
 ```
 
 The model sees skill metadata in the system prompt and can load full skill content through the `Skill` tool. The code stays minimal; skills remain plain files you can inspect and extend.
+
+The runtime now reads `ANTHROPIC_AUTH_TOKEN`. For compatibility, when you point at the default Anthropic endpoint it also mirrors that value to `x-api-key`, since the native Messages API docs still document that header.

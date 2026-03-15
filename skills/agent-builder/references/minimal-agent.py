@@ -6,8 +6,8 @@ This is the simplest possible working agent (~80 lines).
 It has everything you need: 3 tools + loop.
 
 Usage:
-    1. Set ANTHROPIC_API_KEY environment variable
-    2. python minimal-agent.py
+    1. Set ANTHROPIC_AUTH_TOKEN environment variable
+    2. uv run python minimal-agent.py
     3. Type commands, 'q' to quit
 """
 
@@ -17,7 +17,7 @@ import subprocess
 import os
 
 # Configuration
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = Anthropic(api_key=os.getenv("ANTHROPIC_AUTH_TOKEN"))
 MODEL = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 WORKDIR = Path.cwd()
 

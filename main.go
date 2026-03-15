@@ -66,12 +66,14 @@ type skillLoader struct {
 var (
 	workdir    = mustGetwd()
 	skillsDir  = getenv("SKILLS_DIR", filepath.Join(workdir, "skills"))
-	baseURL    = strings.TrimRight(getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"), "/")
+	baseURL    = strings.TrimRight(getenv("ANTHROPIC_BASE_URL", defaultBaseURL), "/")
 	modelName  = getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 	maxTokens  = getenvInt("MAX_TOKENS", 4096)
 	httpClient = &http.Client{Timeout: 5 * time.Minute}
 	skills     = newSkillLoader(skillsDir)
 )
+
+const defaultBaseURL = "https://api.anthropic.com"
 
 func main() {
 	if len(os.Args) > 1 {
@@ -159,9 +161,9 @@ func run(prompt string, history []message) (string, []message, error) {
 }
 
 func callAPI(messages []message) (messageResponse, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return messageResponse{}, fmt.Errorf("ANTHROPIC_API_KEY is required")
+	rawToken, bearerToken, err := authToken()
+	if err != nil {
+		return messageResponse{}, err
 	}
 
 	skills.Refresh()
@@ -182,8 +184,11 @@ func callAPI(messages []message) (messageResponse, error) {
 		return messageResponse{}, err
 	}
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("authorization", bearerToken)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	if baseURL == defaultBaseURL {
+		req.Header.Set("x-api-key", rawToken)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -204,6 +209,22 @@ func callAPI(messages []message) (messageResponse, error) {
 		return messageResponse{}, err
 	}
 	return response, nil
+}
+
+func authToken() (string, string, error) {
+	token := strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN"))
+	if token == "" {
+		return "", "", fmt.Errorf("ANTHROPIC_AUTH_TOKEN is required")
+	}
+	raw := token
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		raw = strings.TrimSpace(token[7:])
+	}
+	bearer := token
+	if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		bearer = "Bearer " + token
+	}
+	return raw, bearer, nil
 }
 
 func runBash(command string) (string, bool) {
